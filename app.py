@@ -9,7 +9,7 @@ import os
 import sys
 import time
 import json
-from io import StringIO
+import joblib
 from typing import Optional
 
 import streamlit as st
@@ -309,9 +309,30 @@ with st.sidebar:
                     "train_results": train_results,
                     "ensemble_result": ensemble_result,
                     "report": report,
-                    "target": target_col,
                     "scored": scored,
                 }
+                # Construir artifact para descarga del modelo
+                artifact = None
+                if train_results.get("top_model") and pipeline_result.get("feature_names"):
+                    top_result = train_results["ranked_models"][0]
+                    te = pipeline_result.get("target_encoder")
+                    artifact = {
+                        "model": train_results["top_model"]["model"],
+                        "plan": plan,
+                        "feature_names": pipeline_result["feature_names"],
+                        "original_columns": [c for c in st.session_state.df.columns
+                                              if c != plan.get("target")],
+                        "task_type": plan["task_type"],
+                        "target_encoder": te,
+                        "target_classes": te.classes_.tolist() if te else None,
+                        "metadata": {
+                            "name": top_result["name"],
+                            "cv_mean": round(top_result["cv_mean"], 4),
+                            "cv_std": round(top_result["cv_std"], 4),
+                        },
+                        "version": "melo-1.0",
+                    }
+                st.session_state.artifact = artifact
                 st.session_state.pipeline_running = False
                 st.rerun()
 
@@ -372,10 +393,11 @@ if st.session_state.df is None:
 df = st.session_state.df
 
 # Tabs de navegación
-tab_preview, tab_profile, tab_results = st.tabs([
+tab_preview, tab_profile, tab_results, tab_predict = st.tabs([
     ":material/table: Vista previa",
     ":material/bar_chart: Perfil de datos",
     ":material/analytics: Resultados",
+    ":material/rocket_launch: Predecir",
 ])
 
 # ── TAB 1: Vista previa ──────────────────────────────────────────
@@ -605,6 +627,74 @@ with tab_results:
         mime="text/plain",
         width="stretch",
     )
+
+    # ── Descargar modelo ──────────────────────────────────────────
+    if st.session_state.get("artifact"):
+        model_bytes = joblib.dumps(st.session_state.artifact)
+        st.download_button(
+            label=":material/download: Descargar modelo (.pkl)",
+            data=model_bytes,
+            file_name=f"{base_name}_modelo.pkl",
+            mime="application/octet-stream",
+        )
+
+# ── TAB 4: Predecir ──────────────────────────────────────────────
+with tab_predict:
+    st.markdown("### :material/rocket_launch: Predecir con modelo entrenado")
+    artifact = st.session_state.get("artifact")
+
+    if artifact is None:
+        st.info(":material/info: Ejecuta el pipeline primero para entrenar un modelo.")
+    else:
+        meta = artifact.get("metadata", {})
+        st.success(f"Modelo listo: **{meta.get('name', '?')}** "
+                   f"(CV: {meta.get('cv_mean', '?')} ±{meta.get('cv_std', '?')})")
+        st.caption(f"{len(artifact['feature_names'])} features · "
+                   f"Tarea: {artifact['task_type']}")
+
+        uploaded = st.file_uploader(
+            "Sube un CSV con los mismos datos (sin columna target)",
+            type=["csv"],
+            key="predict_uploader",
+        )
+
+        if uploaded is not None:
+            try:
+                df_new = pd.read_csv(uploaded)
+                model = artifact["model"]
+                feature_names = artifact["feature_names"]
+                plan = artifact.get("plan", {})
+
+                # Aplicar pre-parseo ligero + plan de preprocesamiento
+                df_new = pre_parse(df_new)
+                from predict import apply_preprocessing
+                df_new = apply_preprocessing(df_new, plan, artifact["task_type"])
+
+                # Verificar columnas
+                missing = set(feature_names) - set(df_new.columns)
+                if missing:
+                    st.error(f"Faltan columnas: {missing}")
+                else:
+                    X = df_new[feature_names]
+                    y_pred = model.predict(X)
+
+                    te = artifact.get("target_encoder")
+                    if te and artifact["task_type"] == "classification":
+                        y_pred = te.inverse_transform(y_pred.astype(int))
+
+                    result_df = df_new.copy()
+                    result_df["prediccion"] = y_pred
+                    st.dataframe(result_df, width="stretch", hide_index=True)
+
+                    csv = result_df.to_csv(index_label="fila").encode("utf-8")
+                    st.download_button(
+                        label=":material/download: Descargar predicciones (CSV)",
+                        data=csv,
+                        file_name="predicciones_nuevas.csv",
+                        mime="text/csv",
+                    )
+            except Exception as e:
+                st.error(f"Error al predecir: {type(e).__name__}: {e}")
 
 # ── Footer ────────────────────────────────────────────────────────
 st.divider()

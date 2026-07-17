@@ -226,7 +226,35 @@ def run_pipeline(
 
         print()
 
-        # ── 5. Ensemble ────────────────────────────────────────────────
+        # ── Guardar modelo si se solicitó ──────────────────────────
+        if cfg.save_model and train_results.get("top_model"):
+            import joblib
+            os.makedirs(cfg.output_dir, exist_ok=True)
+            model = train_results["top_model"]["model"]
+            top_result = train_results["ranked_models"][0]
+            te = pipeline_result.get("target_encoder")
+            artifact = {
+                "model": model,
+                "plan": plan,
+                "feature_names": pipeline_result["feature_names"],
+                "original_columns": [c for c in df.columns
+                                      if c != plan.get("target")],
+                "task_type": plan["task_type"],
+                "target_encoder": te,
+                "target_classes": te.classes_.tolist() if te else None,
+                "metadata": {
+                    "name": top_result["name"],
+                    "cv_mean": round(top_result["cv_mean"], 4),
+                    "cv_std": round(top_result["cv_std"], 4),
+                },
+                "version": "melo-1.0",
+            }
+            model_path = os.path.join(cfg.output_dir, "modelo.pkl")
+            joblib.dump(artifact, model_path)
+            if verbose:
+                print(f"  💾 Modelo guardado: {model_path}")
+
+        # ── 5. Ensemble ────────────────────────────────────────────
         if X_test is not None and y_test is not None:
             if verbose:
                 print("🧬  EVALUANDO ENSEMBLE...")
@@ -244,6 +272,8 @@ def run_pipeline(
                 "models_used": [],
                 "method": "none",
             }
+        print()
+
     else:
         # No supervisado
         train_results = {"ranked_models": [], "top_model": None, "best_score": 0}
@@ -255,7 +285,6 @@ def run_pipeline(
         }
         if verbose:
             print(f"  📌 Modo no supervisado ({plan['task_type']})")
-            print()
 
     # ── 6. Predicciones ─────────────────────────────────────────────
     scored = None
@@ -353,6 +382,8 @@ Ejemplos:
                         help="Desactivar insights del NPC")
     parser.add_argument("--output", "-o", default="output",
                         help="Directorio de salida (default: output/)")
+    parser.add_argument("--save-model", action="store_true",
+                        help="Guardar modelo entrenado como .pkl")
     parser.add_argument("--quiet", "-q", action="store_true",
                         help="Modo silencioso (solo reporte)")
 
@@ -382,7 +413,7 @@ Ejemplos:
             args.no_npc = True
 
     # Config
-    config = PipelineConfig(output_dir=args.output)
+    config = PipelineConfig(output_dir=args.output, save_model=args.save_model)
 
     # Cargar datos
     if not args.quiet:

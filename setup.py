@@ -22,9 +22,10 @@ setup(
         "imbalanced-learn>=0.12.0",
         "streamlit>=1.35.0",
         "openpyxl>=3.1.0",
+        "joblib>=1.3",
     ],
     extras_require={
-        "full": ["xgboost~=3.2.0", "joblib>=1.3"],
+        "full": ["xgboost~=3.2.0"],
         "npc": ["ollama~=0.6.2", "openai"],
         "test": ["pytest>=7"],
     },
