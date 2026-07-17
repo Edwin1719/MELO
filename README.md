@@ -149,9 +149,8 @@ Sin LLM, el pipeline funciona exactamente igual — solo omite este paso.
 ## Instalación
 
 ```bash
-# 1. Clonar
-git clone https://github.com/tu-usuario/databiq-automl.git
-cd databiq-automl
+git clone https://github.com/Edwin1719/MELO.git
+cd MELO
 
 # 2. Entorno (opcional pero recomendado)
 conda create -n automl python=3.11

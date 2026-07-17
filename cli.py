@@ -90,7 +90,7 @@ def pre_parse(df: pd.DataFrame) -> pd.DataFrame:
                 df[col] = df[col].replace([np.inf, -np.inf], np.nan)
 
         # Moneda: $1,234.56 → numeric
-        if df[col].dtype == "object":
+        if isinstance(df[col].dtype, pd.StringDtype) or df[col].dtype == "object":
             sample = df[col].dropna().iloc[:50]
             if len(sample) > 0:
                 has_currency = sample.astype(str).str.contains(r"^\$", na=False).any()
@@ -99,7 +99,7 @@ def pre_parse(df: pd.DataFrame) -> pd.DataFrame:
                     df[col] = pd.to_numeric(cleaned, errors="coerce")
 
         # Porcentaje: 45.2% → 0.452
-        if df[col].dtype == "object":
+        if isinstance(df[col].dtype, pd.StringDtype) or df[col].dtype == "object":
             sample = df[col].dropna().iloc[:50]
             if len(sample) > 0:
                 has_pct = sample.astype(str).str.contains(r"%$", na=False).any()

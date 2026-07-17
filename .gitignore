@@ -11,11 +11,6 @@ venv/
 .venv/
 *.env
 
-# Datos
-datasets/*.csv
-datasets/*.xlsx
-!datasets/.gitkeep
-
 # Output
 output/
 *.txt

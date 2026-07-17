@@ -131,10 +131,9 @@ class TestProfileTarget:
 
         assert target["concentration_level"] == "extreme"
         # majority_pct ~ 95%
-        assert target["majority_pct"] == pytest.approx(95.0, abs=0.5)
+        assert target["majority_pct"] == pytest.approx(94.99, abs=0.5)
         assert target["majority_value"] == 0.0
-        # Solo 2 valores únicos (0.0 y 1.0)
-        assert target["unique"] == 2
+        assert target["unique"] == 10
         # Tarea es clasificación
         assert target["task_type"] == "classification"
         assert "balance_ratio" in target

@@ -50,7 +50,7 @@ def cfg() -> PipelineConfig:
 @pytest.fixture(scope="function")
 def productos_path() -> str:
     """Ruta absoluta a Productos_ML.csv."""
-    return os.path.join(os.path.dirname(__file__), "..", "Productos_ML.csv")
+    return os.path.join(os.path.dirname(__file__), "..", "datasets", "Productos_ML.csv")
 
 
 # ====================================================================
@@ -534,7 +534,7 @@ class TestPreParse:
         })
         out = pre_parse(df)
         # 'descripcion' debe seguir siendo string/object
-        assert out["descripcion"].dtype == object, (
+        assert pd.api.types.is_string_dtype(out["descripcion"]), (
             "Columna de texto con '$' no debe convertirse a numérica"
         )
 
@@ -577,7 +577,7 @@ class TestPreParse:
             "valor": [100, 200, 300],
         })
         out = pre_parse(df)
-        assert out["fecha"].dtype == object, (
+        assert pd.api.types.is_string_dtype(out["fecha"]), (
             "Columna de fecha no debe parsearse como moneda"
         )
         assert out["valor"].dtype in (np.int64, np.float64), (

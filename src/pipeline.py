@@ -28,6 +28,11 @@ from sklearn.impute import SimpleImputer
 
 warnings.filterwarnings("ignore")
 
+def _is_text_col(df: pd.DataFrame, col: str) -> bool:
+    """True si la columna es texto (object o StringDtype de pandas 3.x)."""
+    dtype = df[col].dtype
+    return dtype == "object" or isinstance(dtype, pd.StringDtype)
+
 
 def _parse_dates_mixed(series: pd.Series) -> pd.Series:
     """
@@ -88,7 +93,7 @@ def preprocess_raw(df: pd.DataFrame, plan: dict, target: Optional[str] = None) -
             continue
 
         # ── 0a. Normalizar nulos textuales ANTES de cualquier parseo ──
-        if df[col].dtype == "object":
+        if _is_text_col(df, col):
             null_aliases = {"n/a", "na", "null", "none", "?", "-", "--", "nan", ""}
             n_before = df[col].isna().sum()
             df[col] = df[col].replace(null_aliases, np.nan)
@@ -102,7 +107,7 @@ def preprocess_raw(df: pd.DataFrame, plan: dict, target: Optional[str] = None) -
             continue
 
         # ── 1. Detectar y parsear columnas de moneda ──────────────
-        if df[col].dtype == "object":
+        if _is_text_col(df, col):
             sample = df[col].dropna().iloc[:20]
             # Detectar si tiene formato moneda ($ o , como separador miles)
             has_currency = (
@@ -122,7 +127,7 @@ def preprocess_raw(df: pd.DataFrame, plan: dict, target: Optional[str] = None) -
                 continue
 
         # ── 2. Detectar y parsear porcentajes ─────────────────────
-        if df[col].dtype == "object":
+        if _is_text_col(df, col):
             sample = df[col].dropna().iloc[:20]
             has_pct = sample.astype(str).str.contains(r"%$", na=False).any()
             if has_pct and not has_currency:
@@ -136,7 +141,7 @@ def preprocess_raw(df: pd.DataFrame, plan: dict, target: Optional[str] = None) -
 
         # ── 2b. Coerción genérica: columnas object que parecen numéricas ──
         # Después de moneda y %, rescata columnas como "1250", "N/A", "3400" → float
-        if df[col].dtype == "object":
+        if _is_text_col(df, col):
             sample = df[col].dropna().iloc[:50]
             if len(sample) >= 5:
                 parsed = pd.to_numeric(sample, errors="coerce")
@@ -147,7 +152,7 @@ def preprocess_raw(df: pd.DataFrame, plan: dict, target: Optional[str] = None) -
                     continue
 
         # ── 3. Detectar y parsear fechas ──────────────────────────
-        if df[col].dtype == "object":
+        if _is_text_col(df, col):
             sample = df[col].dropna()
             if len(sample) > 10:
                 sample_strs = sample.iloc[:30].astype(str)
@@ -181,7 +186,7 @@ def preprocess_raw(df: pd.DataFrame, plan: dict, target: Optional[str] = None) -
             # Si hay pocas muestras, continúa a pasos 4 y 5
 
         # ── 4. Normalizar strings categóricos ────────────────────
-        if df[col].dtype == "object":
+        if _is_text_col(df, col):
             n_unique = df[col].numba() if hasattr(df[col], "numba") else df[col].nunique()
             # Si no es ID (menos de 50% únicos) → normalizar
             if n_unique < len(df) * 0.5:
@@ -196,7 +201,7 @@ def preprocess_raw(df: pd.DataFrame, plan: dict, target: Optional[str] = None) -
                 etl_log["normalized_cats"].append(col)
 
         # ── 5. Detectar IDs de alta cardinalidad (>90% únicos) ───
-        if df[col].dtype == "object":
+        if _is_text_col(df, col):
             n_unique = df[col].nunique()
             if n_unique > len(df) * 0.9:
                 etl_log["ids_detected"].append(col)
@@ -482,7 +487,7 @@ def execute_pipeline(
     y_encoded = None
 
     if y is not None:
-        if task_type == "classification" or y.dtype == "object":
+        if task_type == "classification" or isinstance(y.dtype, pd.StringDtype) or y.dtype == "object":
             target_encoder = LabelEncoder()
             y_encoded = target_encoder.fit_transform(y)
         else:
