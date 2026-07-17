@@ -168,12 +168,18 @@ def train_models(
                 continue
 
         test_scores = {}
+        importances = None
         if best_model is None and all_cv_runs:
             best_params = all_cv_runs[0]["params"]
             try:
                 best_model = model_class(**best_params)
                 best_model.fit(X_train, y_train, **_fit_params)
-
+                # Extraer importancia de features
+                if hasattr(best_model, "feature_importances_"):
+                    importances = best_model.feature_importances_.tolist()
+                elif hasattr(best_model, "coef_"):
+                    coef = best_model.coef_
+                    importances = (coef[0] if coef.shape[0] == 1 else coef.mean(axis=0)).tolist()
                 # Evaluar en test set
                 if X_test is not None and y_test is not None:
                     y_pred = best_model.predict(X_test)
@@ -181,7 +187,6 @@ def train_models(
                     if verbose:
                         top_metric = next(iter(test_scores.values()))
                         print(f" test={top_metric:.4f}", end=" ")
-
                 # Guardar modelo si configurado
                 if config and getattr(config, "save_model", False):
                     import joblib
@@ -190,9 +195,9 @@ def train_models(
                     os.makedirs(out_dir, exist_ok=True)
                     path = os.path.join(out_dir, f"{model_name}_{task_type}.pkl")
                     joblib.dump(best_model, path)
-
             except Exception:
                 continue
+
 
         elapsed = time.time() - start
 
@@ -204,10 +209,11 @@ def train_models(
             "cv_mean": all_cv_runs[0]["cv_mean"] if all_cv_runs else 0,
             "cv_std": all_cv_runs[0]["cv_std"] if all_cv_runs else 0,
             "n_combos_tried": len(all_cv_runs),
-            "model": best_model,
+            "importances": importances,  # puede ser None si el modelo no soporta
             "time_seconds": round(elapsed, 2),
             "all_cv": all_cv_runs,
             "test_scores": test_scores if test_scores else None,
+            "model": best_model,
         }
 
         results.append(result)
@@ -228,6 +234,7 @@ def train_models(
         "top_model": top,
         "best_score": top["cv_mean"] if top else 0,
         "best_test_scores": top.get("test_scores") if top else None,
+        "feature_names": X_train.columns.tolist(),
     }
 
 

@@ -533,6 +533,19 @@ with tab_results:
                     st.caption(f"Params: {params_str[:80]}...")
                 st.caption(f"⏱️ {model.get('time_seconds', 0):.1f}s")
 
+    # ── Importancia de features ─────────────────────────────────
+    top = ranked[0] if ranked else None
+    feat_names = train_results.get("feature_names", [])
+    if top and top.get("importances") and feat_names:
+        st.markdown("### :material/bar_chart: Importancia de features")
+        st.caption(f"Del mejor modelo: **{top['name']}**")
+        imp_df = pd.DataFrame({"feature": feat_names, "importancia": top["importances"]})
+        imp_df = imp_df.sort_values("importancia", ascending=False)
+        max_imp = imp_df["importancia"].max()
+        for _, row in imp_df.iterrows():
+            bar = "█" * max(1, int(row["importancia"] / max_imp * 25))
+            st.markdown(f"`{row['importancia']:.4f}` {bar} **{row['feature']}**")
+
     # ── Ensemble ──────────────────────────────────────────────────
     if ensemble_result.get("scores"):
         st.markdown("### :material/neurology: Ensemble")
