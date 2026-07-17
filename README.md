@@ -234,14 +234,21 @@ Argumentos:
   --task                Forzar tipo de tarea
   --no-npc              Desactivar insights del NPC
   --output, -o          Directorio de salida (default: output/)
+  --save-model          Guardar modelo entrenado como .pkl
   --quiet, -q           Modo silencioso (solo reporte)
+
+### Predecir con modelo guardado
+
+```bash
+# Entrenar y guardar modelo
+python cli.py datos.csv --target churn --save-model
+
+# Predecir sobre datos nuevos (sin target)
+python predict.py output/modelo.pkl datos_nuevos.csv -o predicciones.csv
 ```
-
----
-
 ## Resultados
 
-Después de ejecutar el pipeline, obtienes 3 entregables:
+Después de ejecutar el pipeline, obtienes **4 entregables**:
 
 ### 📋 Reporte ejecutivo
 ```
@@ -260,6 +267,12 @@ Archivo `output/dataset_predicciones.csv` con `valor_real`, `prediccion`, y `aci
 ### 🧬 Nuevas features
 Cuando Ollama está activo, el reporte incluye las columnas generadas por IA, visibles en "Preprocesamiento aplicado" de la UI.
 
+### 📦 Modelo exportable
+```bash
+python cli.py datos.csv --target churn --save-model  # genera output/modelo.pkl
+python predict.py output/modelo.pkl datos_nuevos.csv -o pred.csv
+```
+Descargable desde la UI como botón `.pkl`.
 ---
 
 ## Arquitectura

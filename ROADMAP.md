@@ -17,7 +17,9 @@
 
 ## Fase 1 — Fortalecer el análisis (prioridad máxima)
 
-### 🔥 1.1 Importancia de features visual
+### ✅ 1.1 Importancia de features visual
+
+**Estado:** ✅ Completado — `src/trainer.py` extrae `feature_importances_`/`coef_` del mejor modelo, `app.py` lo muestra como barras en Resultados.
 
 **Problema:** El reporte dice "*Revisa las features más importantes del mejor modelo*" pero no muestra cuáles son. Es la pregunta #1 de todo data scientist después de entrenar.
 
@@ -47,40 +49,29 @@
 
 ---
 
-### 🔥 1.2 Exportar modelo entrenado (descargar .pkl)
+### ✅ 1.2 Exportar modelo entrenado (descargar .pkl)
+
+**Estado:** ✅ Completado — `--save-model` en CLI, botón de descarga en UI, y `predict.py` para scoring batch.
 
 **Problema:** `save_model=True` existe en `config.py` pero no hay botón en la UI para descargar el modelo. El usuario no puede llevarse el modelo a otro entorno.
 
 **Solución:** Agregar botón "Descargar modelo (.pkl)" en la UI que serialice el mejor modelo con joblib y lo ofrezca como descarga. Además, crear script `predict.py` para cargar el modelo y predecir sobre datos nuevos.
 
 **Archivos a modificar:**
-- `app.py` — Botón de descarga en Resultados después del Ensemble
+- `app.py` — Botón de descarga en Resultados después del Ensemble + tab "Predecir"
 - `predict.py` (nuevo) — Script CLI para batch scoring: `python predict.py modelo.pkl datos_nuevos.csv`
 
-**Esfuerzo:** ~50 líneas | **Riesgo:** Bajo (joblib ya está como dependencia opcional)
+**Esfuerzo:** ~50 líneas | **Riesgo:** Bajo (joblib ya está como dependencia)
 
 **Criterio de éxito:** Usuario puede descargar el modelo desde la UI, y ejecutar `python predict.py modelo.pkl datos_nuevos.csv` para obtener predicciones.
 
 ---
 
-### 🔥 1.3 Comparación entre ejecuciones
-
-**Problema:** Cada ejecución reemplaza los resultados anteriores. No hay forma de comparar "¿Qué pasa si cambio el target?" o "¿Y si uso 5 folds vs 10?".
-
-**Solución:** Guardar historial de ejecuciones en `st.session_state` con timestamp, target, y métricas clave. Mostrar tabla comparativa en un nuevo tab o expander.
-
-**Archivos a modificar:**
-- `app.py` — Agregar `st.session_state.run_history` y sección "Historial de ejecuciones"
-
-**Esfuerzo:** ~60 líneas | **Riesgo:** Bajo (solo estado en sesión de Streamlit)
-
-**Criterio de éxito:** Usuario puede ejecutar el pipeline 3 veces con diferentes configuraciones y ver una tabla comparativa lado a lado.
-
----
-
 ## Fase 2 — Cerrar el ciclo producción
 
-### 🚀 2.1 Scoring sobre datos nuevos (batch predict)
+### ✅ 2.1 Batch scoring (parcial)
+
+**Estado:** ✅ Parcialmente completado — `predict.py` funcional y tab "Predecir" en UI. Pendiente: serializar el pipeline completo (preprocessor + modelo) para que predict.py aplique el preprocesamiento exacto del entrenamiento (hoy lo aproxima con los datos nuevos).
 
 **Problema:** El modelo entrenado solo predice sobre el test set. Para usarlo en producción, el usuario necesita cargar datos nuevos (sin target), aplicar el mismo preprocesamiento, y obtener predicciones.
 
@@ -98,45 +89,6 @@
 ---
 
 ### 🚀 2.2 Dashboard de calidad de datos
-
-**Problema:** El perfilado existe pero está limitado a texto. Un analista de datos necesita ver distribuciones, correlaciones y patrones visualmente antes de modelar.
-
-**Solución:** Nuevo tab "Calidad de datos" con:
-- Heatmap de correlaciones (numérico)
-- Histogramas de cada columna numérica
-- Barras de frecuencia para categóricas
-- Matriz de valores faltantes
-- Detección de outliers con boxplots
-
-**Archivos a modificar:**
-- `app.py` — Nuevo tab "📊 Calidad de datos"
-- `src/profiler.py` — Agregar estadísticas adicionales si es necesario
-
-**Esfuerzo:** ~120 líneas | **Riesgo:** Bajo (todo son gráficos de pandas/matplotlib)
-
-**Criterio de éxito:** Al cargar un dataset, el tab "Calidad de datos" muestra visualizaciones interactivas de cada columna.
-
----
-
-## Fase 3 — Explicabilidad y confianza
-
-### 💎 3.1 Explicabilidad con SHAP
-
-**Problema:** El usuario sabe *qué* predijo el modelo pero no *por qué*. Para auditoría y confianza, necesita entender la contribución de cada feature en cada predicción.
-
-**Solución:** Integrar SHAP (SHapley Additive exPlanations):
-- Summary plot: importancia global de features
-- Force plot: explicación de una predicción individual (el usuario selecciona una fila)
-- Dependence plot: cómo varía el impacto de una feature al cambiar su valor
-
-**Archivos a modificar:**
-- `app.py` — Agregar sección SHAP en Resultados
-- `src/trainer.py` — Calcular valores SHAP después del entrenamiento
-- `requirements.txt` — Agregar `shap` como dependencia opcional
-
-**Esfuerzo:** ~150 líneas | **Riesgo:** Medio (SHAP puede ser lento en datasets grandes)
-
-**Criterio de éxito:** Usuario puede seleccionar una fila de la tabla de predicciones y ver un force plot explicando por qué el modelo predijo ese valor.
 
 ---
 
@@ -201,17 +153,17 @@ def ingresos_por_persona(df, ingresos, personas):
 
 ## Resumen de prioridades
 
-| # | Mejora | Fase | Impacto | Esfuerzo | Dependencias |
-|---|---|---|---|---|---|
-| 1 | Importancia de features visual | 1 | 🔥 Alto | ~40 líneas | Ninguna |
-| 2 | Exportar modelo + predict.py | 1 | 🔥 Alto | ~50 líneas | joblib |
-| 3 | Comparación de ejecuciones | 1 | 🔥 Alto | ~60 líneas | Ninguna |
-| 4 | Batch scoring desde UI | 2 | 🚀 Alto | ~100 líneas | #2 completado |
-| 5 | Dashboard de calidad de datos | 2 | 🚀 Alto | ~120 líneas | matplotlib/plotly |
-| 6 | Explicabilidad SHAP | 3 | 💎 Medio | ~150 líneas | shap |
-| 7 | Reporte HTML | 3 | 💎 Medio | ~100 líneas | Jinja2 |
-| 8 | AutoML extendido | 4 | 🧪 Medio | ~200 líneas | Optuna |
-| 9 | Plugins de transformación | 4 | 🧪 Bajo | ~80 líneas | Ninguna |
+| # | Mejora | Fase | Impacto | Esfuerzo | Dependencias | Estado |
+|---|---|---|---|---|---|---|
+| 1 | Importancia de features visual | 1 | 🔥 Alto | ~40 líneas | Ninguna | ✅ |
+| 2 | Exportar modelo + predict.py | 1 | 🔥 Alto | ~50 líneas | joblib | ✅ |
+| 3 | Comparación de ejecuciones | 1 | 🔥 Alto | ~60 líneas | Ninguna | ⏳ |
+| 4 | Batch scoring desde UI | 2 | 🚀 Alto | ~100 líneas | #2 completado | ⏳ parcial |
+| 5 | Dashboard de calidad de datos | 2 | 🚀 Alto | ~120 líneas | matplotlib/plotly | ⏳ |
+| 6 | Explicabilidad SHAP | 3 | 💎 Medio | ~150 líneas | shap | ⏳ |
+| 7 | Reporte HTML | 3 | 💎 Medio | ~100 líneas | Jinja2 | ⏳ |
+| 8 | AutoML extendido | 4 | 🧪 Medio | ~200 líneas | Optuna | ⏳ |
+| 9 | Plugins de transformación | 4 | 🧪 Bajo | ~80 líneas | Ninguna | ⏳ |
 
 ---
 
