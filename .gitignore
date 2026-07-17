@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Entornos
+.env
+venv/
+.venv/
+*.env
+
+# Datos
+datasets/*.csv
+datasets/*.xlsx
+!datasets/.gitkeep
+
+# Output
+output/
+*.txt
+!output/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
