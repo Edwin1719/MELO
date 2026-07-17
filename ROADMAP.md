@@ -176,4 +176,25 @@ def ingresos_por_persona(df, ingresos, personas):
 
 ---
 
+## Refactorings pendientes (hallazgos de auditoría)
+
+Priorizados por impacto × facilidad. Los ✅ ya están aplicados.
+
+| # | Hallazgo | Archivo | Esfuerzo | Prioridad |
+|---|---|---|---|---|
+| ✅ | `import re` no usado | `pipeline.py` | 1 línea | 🔴 |
+| ✅ | `SimpleImputer` no usado | `pipeline.py` | 1 línea | 🔴 |
+| ✅ | `import sys` no usado | `app.py` | 1 línea | 🔴 |
+| ✅ | Modelo guardado 2 veces | `trainer.py` | 3 líneas | 🔴 |
+| ✅ | `numba()` → `nunique()` (bug) | `pipeline.py` | 1 línea | 🔴 |
+| 1 | `execute_pipeline()`: 287 líneas | `pipeline.py` | Extraer helpers | 🟡 |
+| 2 | `_default_plan()`: 218 líneas | `strategist.py` | Tablas de decisión | 🟡 |
+| 3 | `train_models()`: 184 líneas | `trainer.py` | Extraer grid search | 🟡 |
+| 4 | Parseo duplicado pre_parse vs preprocess_raw | `cli.py` + `pipeline.py` | Unificar ETL | 🟡 |
+| 5 | Lógica de balanceo en config vs profiler | `config.py` + `profiler.py` | Centralizar | 🟢 |
+| 6 | `app.py`: 701 líneas monolítico | `app.py` | Separar tabs | 🟢 |
+| 7 | `reporter.py`: prompt LLM inline | `reporter.py` | Extraer a archivo | 🟢 |
+
+---
+
 *Última actualización: 2026-07-17*

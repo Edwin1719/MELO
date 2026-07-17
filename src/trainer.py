@@ -187,14 +187,8 @@ def train_models(
                     if verbose:
                         top_metric = next(iter(test_scores.values()))
                         print(f" test={top_metric:.4f}", end=" ")
-                # Guardar modelo si configurado
-                if config and getattr(config, "save_model", False):
-                    import joblib
-                    model_name = model_spec["name"].replace(" ", "_")
-                    out_dir = getattr(config, "output_dir", "output")
-                    os.makedirs(out_dir, exist_ok=True)
-                    path = os.path.join(out_dir, f"{model_name}_{task_type}.pkl")
-                    joblib.dump(best_model, path)
+                # Nota: el guardado del modelo ahora se maneja desde cli.py/app.py
+                # via el artifact (modelo + metadatos). El trainer ya no guarda individualmente.
             except Exception:
                 continue
 

@@ -9,7 +9,6 @@ Incluye ETL real:
 - Imputación, encoding, escalado, balanceo, split
 """
 
-import re
 import warnings
 from typing import Optional, Tuple
 
@@ -24,8 +23,6 @@ from sklearn.preprocessing import (
     LabelEncoder,
     OneHotEncoder,
 )
-from sklearn.impute import SimpleImputer
-
 warnings.filterwarnings("ignore")
 
 def _is_text_col(df: pd.DataFrame, col: str) -> bool:
@@ -123,29 +120,28 @@ def preprocess_raw(df: pd.DataFrame, plan: dict, target: Optional[str] = None) -
                     df[col] = pd.to_numeric(df[col], errors="coerce")
                     etl_log["parsed_currency"].append(col)
                 except Exception:
-                    pass
+                    warnings.warn(f"Error al parsear moneda en columna '{col}'", stacklevel=2)
                 continue
 
         # ── 2. Detectar y parsear porcentajes ─────────────────────
         if _is_text_col(df, col):
-            sample = df[col].dropna().iloc[:20]
-            has_pct = sample.astype(str).str.contains(r"%$", na=False).any()
+            pct_sample = df[col].dropna().iloc[:20]
+            has_pct = pct_sample.astype(str).str.contains(r"%$", na=False).any()
             if has_pct and not has_currency:
                 try:
                     df[col] = df[col].astype(str).str.replace("%", "", regex=False)
                     df[col] = pd.to_numeric(df[col], errors="coerce") / 100.0
                     etl_log["parsed_pct"].append(col)
                 except Exception:
-                    pass
+                    warnings.warn(f"Error al parsear porcentaje en columna '{col}'", stacklevel=2)
                 continue
 
-        # ── 2b. Coerción genérica: columnas object que parecen numéricas ──
-        # Después de moneda y %, rescata columnas como "1250", "N/A", "3400" → float
+        # ── 2b. Coerción genérica: columnas que parecen numéricas ──
         if _is_text_col(df, col):
-            sample = df[col].dropna().iloc[:50]
-            if len(sample) >= 5:
-                parsed = pd.to_numeric(sample, errors="coerce")
-                ratio = parsed.notna().sum() / len(sample)
+            num_sample = df[col].dropna().iloc[:50]
+            if len(num_sample) >= 5:
+                parsed = pd.to_numeric(num_sample, errors="coerce")
+                ratio = parsed.notna().sum() / len(num_sample)
                 if ratio >= 0.7:
                     df[col] = pd.to_numeric(df[col], errors="coerce")
                     etl_log.setdefault("coerced_numeric", []).append(col)
@@ -187,10 +183,8 @@ def preprocess_raw(df: pd.DataFrame, plan: dict, target: Optional[str] = None) -
 
         # ── 4. Normalizar strings categóricos ────────────────────
         if _is_text_col(df, col):
-            n_unique = df[col].numba() if hasattr(df[col], "numba") else df[col].nunique()
-            # Si no es ID (menos de 50% únicos) → normalizar
+            n_unique = df[col].nunique()
             if n_unique < len(df) * 0.5:
-                df[col] = df[col].astype(str).str.strip().str.lower()
                 # Unificar variantes comunes
                 replacements = {
                     "masculino": "masculino", "male": "masculino", "m": "masculino", "h": "masculino",
