@@ -629,7 +629,10 @@ with tab_results:
 
     # ── Descargar modelo ──────────────────────────────────────────
     if st.session_state.get("artifact"):
-        model_bytes = joblib.dumps(st.session_state.artifact)
+        import io
+        buf = io.BytesIO()
+        joblib.dump(st.session_state.artifact, buf)
+        model_bytes = buf.getvalue()
         st.download_button(
             label=":material/download: Descargar modelo (.pkl)",
             data=model_bytes,
