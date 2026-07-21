@@ -92,7 +92,185 @@
 
 ---
 
-### 💎 3.2 Reporte HTML exportable
+## Fase 3 — EDA inteligente y datasets masivos (DuckDB)
+
+> DuckDB entra como **motor analítico embebido**, no como reemplazo de nada. Dos roles: (1) ejecutar preguntas de negocio en lenguaje natural antes del pipeline, y (2) perfilar datasets grandes sin saturar RAM. En ambos casos, DuckDB opera sobre el CSV o DataFrame directamente, zero-copy.
+
+### 🚀 3.1 EDA en lenguaje natural (DuckDB + LLM)
+
+**Estado:** ⏳ Propuesto
+
+**Problema:** MELO hoy es un pipeline ciego: cargas un CSV y arranca a procesar sin que nadie —ni el usuario ni el sistema— entienda realmente qué hay en los datos. El analista termina abriendo Jupyter o Excel para explorar antes de volver a MELO. El estratega decide features basado solo en estadísticas frías (nulos, cardinalidad, skew) sin contexto de negocio.
+
+**Solución:** DuckDB + LLM habilitan **dos capacidades independientes** que comparten el mismo motor NL→SQL, pero sirven a audiencias distintas:
+
+```
+┌── Capa 1: EDA conversacional para el analista ──────────────────────┐
+│                                                                      │
+│  "No necesito Jupyter. Le pregunto a mis datos."                    │
+│                                                                      │
+│  Usuario: "¿cuál es el ticket promedio por vendedor en el Q4?"       │
+│       ↓                                                              │
+│  LLM → SQL → DuckDB → tabla interactiva en la UI                    │
+│                                                                      │
+│  ⚡ Valor: elimina el ciclo "abrir Jupyter → cargar CSV → escribir   │
+│     pandas → interpretar resultado → volver a MELO". El analista     │
+│     explora sus datos en español, sin código, sin salir de la app.   │
+│     Esta capa se justifica sola — incluso si nunca ejecutas el       │
+│     pipeline, ya ganaste.                                            │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌── Capa 2: Insights automáticos para el estratega ───────────────────┐
+│                                                                      │
+│  "No necesito que el usuario me diga qué preguntar."                 │
+│                                                                      │
+│  El pipeline lanza 5-10 preguntas automáticas basadas en el perfil   │
+│  del dataset (columnas, tipos, target) y ejecuta:                    │
+│                                                                      │
+│  • "¿qué segmentos tienen la tasa de churn más alta?"                │
+│  • "¿hay columnas con comportamiento atípico por categoría?"         │
+│  • "¿cómo varía el target entre los valores extremos de cada num?"   │
+│  • "¿existen grupos de filas con patrones contradictorios?"          │
+│       ↓                                                              │
+│  Resultados → profile["eda_insights"] → prompt del estratega         │
+│                                                                      │
+│  ⚡ Valor: el estratega ya no decide a ciegas. Ve patrones de        │
+│     negocio reales, no solo estadísticas descriptivas. Sus           │
+│     sugerencias de features y su justificación están basadas en      │
+│     datos, no en heurísticas genéricas.                              │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+**¿Qué gana cada actor con esto?**
+
+| Actor | Sin DuckDB | Con DuckDB |
+|---|---|---|
+| **Analista** | Abre Jupyter, escribe `df.groupby('ciudad')['churn'].mean()`, interpreta, vuelve a MELO | Escribe en español en la UI: *"¿churn promedio por ciudad?"* → tabla en <2s. Sin salir de la app. |
+| **Estratega** | Ve: `antigüedad_meses`, skew 1.2, 5% nulos | Ve: *"Clientes con <6 meses de antigüedad tienen 4× más churn"* → sugiere `bin(antigüedad, [0,6,12,24])` |
+| **Estratega** | Ve: `ciudad`, 15 categorías, cardinalidad media | Ve: *"Bogotá concentra 40% del churn total"* → sugiere `keyword(ciudad, 'Bogotá')` como flag |
+| **Estratega** | Ve: correlación `ingreso ~ churn = -0.15` | Ve: *"En el segmento premium, ingreso y churn correlacionan -0.45"* → sugiere `interact(ingreso, es_premium)` |
+| **Estratega** | Justificación genérica: *"desbalanceo moderado, se usará SMOTE"* | Justificación rica: *"Los clientes premium en Bogotá con <6 meses de antigüedad concentran el 60% del churn. Se crearán features de interacción para capturar este patrón."* |
+| **Usuario final** | Recibe un reporte con métricas | Recibe un reporte que **incluye hallazgos de negocio** descubiertos durante el EDA automático, no solo scores del modelo |
+
+**Arquitectura técnica:**
+
+```
+src/explorer.py (nuevo)
+├── explore_dataset(df, questions, config) → dict
+│   ├── _nl_to_sql(prompt, schema) → str       # LLM traduce pregunta a SQL
+│   ├── _execute_duckdb(df, sql) → DataFrame   # DuckDB ejecuta (zero-copy)
+│   └── _auto_questions(profile) → list[str]   # Preguntas predefinidas según tipo de datos
+│
+└── DuckDB opera sobre:
+    - DataFrames de pandas (zero-copy vía Arrow)
+    - CSVs directos (sin cargar en pandas) para datasets grandes
+```
+
+**Prompt engineering para NL→SQL:**
+```
+Eres un analista SQL. Traduce esta pregunta a una consulta DuckDB válida.
+
+Esquema de la tabla 'df':
+{columnas con tipos}
+
+Reglas:
+- Usa sintaxis DuckDB (compatible con PostgreSQL)
+- Nombres de columna entre comillas dobles si tienen tildes o espacios
+- Para porcentajes, multiplica por 100 y redondea a 1 decimal
+- Limita resultados a 20 filas máximo
+- Solo SELECT, nunca INSERT/UPDATE/DELETE
+
+Pregunta: "¿qué productos tienen mayor churn por ciudad?"
+
+Respuesta (solo SQL):
+```
+
+**Archivos a modificar/crear:**
+- `src/explorer.py` (nuevo) — Motor de EDA: NL→SQL→DuckDB, ~150 líneas
+- `src/strategist.py` — `build_plan()` recibe `eda_insights` y los incluye en el prompt del NPC
+- `src/profiler.py` — `profile_dataset()` acepta un parámetro opcional `eda_insights: dict`
+- `app.py` — Nuevo tab "Explorar" (antes de "Resultados") con chat input + tabla de resultados
+- `cli.py` — Flag `--explore` para ejecutar preguntas automáticas antes del pipeline
+
+**Esfuerzo:** ~250 líneas | **Riesgo:** Medio (dependencia nueva: DuckDB; la generación NL→SQL requiere prompt engineering cuidadoso)
+
+**Criterio de éxito:**
+1. Usuario escribe "¿cuál es el ticket promedio por vendedor?" y ve una tabla con la respuesta en <2 segundos
+2. Sin intervención del usuario, el pipeline genera 3-5 preguntas automáticas y los insights aparecen en el reporte final
+3. El estratega menciona hallazgos concretos del EDA en la justificación del plan
+
+---
+
+### 🚀 3.2 Perfilado acelerado para datasets grandes (>100 MB)
+
+**Estado:** ⏳ Propuesto
+
+**Problema:** `profile_dataset()` carga el CSV completo en pandas para calcular estadísticas. Con 5M+ de filas, esto consume gigabytes de RAM y tarda minutos. El usuario con un archivo de 2 GB simplemente no puede usar MELO.
+
+**Solución:** Detectar tamaño del archivo al cargar. Si supera el umbral (configurable, default 100 MB), delegar a DuckDB las operaciones costosas del perfilado. DuckDB ejecuta en streaming — no carga el dataset completo en memoria.
+
+**Operaciones que DuckDB acelera:**
+
+| Operación | pandas (hoy) | DuckDB (propuesto) | Ganancia |
+|---|---|---|---|
+| `COUNT(*)` / `COUNT(DISTINCT col)` | `df[col].nunique()` — carga toda la columna | `SELECT COUNT(DISTINCT col) FROM df` — streaming | RAM: de O(n) a O(1) |
+| Nulos por columna | `df[col].isna().sum()` — escanea toda la columna | `SELECT COUNT(*) - COUNT(col) FROM df` — una pasada para todas las columnas | Velocidad: 5-10× en datasets anchos |
+| Percentiles (Q1, Q3, etc.) | `df[col].quantile([.25,.75])` — ordena la columna | `PERCENTILE_CONT(0.25) WITHIN GROUP` — aproximación eficiente | RAM + velocidad |
+| Matriz de correlación | `df.corr()` — O(n × c²) en memoria | `SELECT CORR(a, b) FROM df` — vectorizado, paralelo | Velocidad: 3-5× |
+| `value_counts()` para categóricas | `df[col].value_counts()` — hash table en RAM | `SELECT col, COUNT(*) FROM df GROUP BY col` — paralelo | Velocidad: 2-3× |
+
+**Arquitectura:**
+
+```python
+# src/profiler.py — nuevo flujo
+def profile_dataset(df_or_path, target=None, use_duckdb="auto"):
+    if use_duckdb == "auto":
+        use_duckdb = _should_use_duckdb(df_or_path)  # >100 MB o >500K filas
+    
+    if use_duckdb:
+        return _profile_with_duckdb(df_or_path, target)
+    else:
+        return _profile_with_pandas(df_or_path, target)  # implementación actual
+
+def _profile_with_duckdb(path_or_df, target):
+    import duckdb
+    con = duckdb.connect()  # in-memory, zero-conf
+    
+    # Si es path, registrar el CSV directamente (sin cargar en pandas)
+    if isinstance(path_or_df, (str, Path)):
+        con.execute(f"CREATE TABLE df AS SELECT * FROM read_csv_auto('{path_or_df}')")
+    else:
+        con.register("df", path_or_df)  # zero-copy desde pandas DataFrame
+    
+    # Una sola consulta para todas las estadísticas por columna
+    stats = con.execute("""
+        SELECT column_name, data_type,
+               COUNT(*) as n_total,
+               COUNT(column_name) as n_non_null,
+               COUNT(DISTINCT column_name) as n_unique
+        FROM (UNPIVOT df ON COLUMNS(* exclude(...)) INTO NAME column_name VALUE val)
+        GROUP BY column_name, data_type
+    """).fetchdf()
+    
+    # ... etc para correlaciones, percentiles, distribuciones
+```
+
+**Archivos a modificar:**
+- `src/profiler.py` — Agregar `_should_use_duckdb()`, `_profile_with_duckdb()`, y el router en `profile_dataset()`
+- `src/config.py` — Agregar `duckdb_threshold_mb: int = 100` y `duckdb_threshold_rows: int = 500_000`
+- `requirements.txt` — Agregar `duckdb>=1.0`
+
+**Esfuerzo:** ~180 líneas | **Riesgo:** Medio (DuckDB tiene su propio sistema de tipos; hay que manejar edge cases de compatibilidad con el perfil actual)
+
+**Criterio de éxito:** Un CSV de 2 GB / 5M filas se perfila en <10s y con <500 MB de RAM (vs. los ~4 GB y >60s actuales).
+
+---
+
+### 💎 3.3 Reporte HTML exportable
+
+**Estado:** ⏳ Propuesto (movido desde antigua sección huérfana)
 
 **Problema:** El reporte actual es texto plano. Los interesados de negocio esperan un documento formateado con gráficos, tablas y diseño profesional.
 
@@ -101,13 +279,35 @@
 - Gráfico de importancia de features
 - Tabla de predicciones con paginación
 - Estilo profesional (CSS inline para portabilidad)
+- Sección de insights EDA (si DuckDB estuvo activo)
 
 **Archivos a modificar:**
 - `src/reporter.py` — Nueva función `generate_html_report()`
 
-**Esfuerzo:** ~100 líneas | **Riesgo:** Bajo
+**Esfuerzo:** ~120 líneas | **Riesgo:** Bajo
 
 **Criterio de éxito:** Botón "Descargar reporte (.html)" en la UI que abre un documento con diseño profesional en el navegador.
+
+---
+
+### 💎 3.4 Explicabilidad con SHAP
+
+**Estado:** ⏳ Propuesto
+
+**Problema:** El ranking de modelos muestra importancia de features, pero no explica *por qué* una predicción individual fue X en lugar de Y. Para casos de alto riesgo (churn de cliente VIP, fraude), el usuario necesita explicaciones por instancia.
+
+**Solución:** Integrar SHAP sobre el mejor modelo del ranking. Para modelos basados en árboles (RandomForest, GradientBoosting) usar `TreeExplainer` (rápido). Para modelos lineales (LogisticRegression, Ridge) usar `LinearExplainer`. Mostrar:
+- Waterfall plot por instancia (UI interactiva)
+- Summary plot global (qué features empujan las predicciones en cada dirección)
+
+**Archivos a modificar:**
+- `src/trainer.py` — Calcular SHAP values para el mejor modelo
+- `app.py` — Sección "Explicabilidad" en tab Resultados
+- `requirements.txt` — Agregar `shap>=0.46`
+
+**Esfuerzo:** ~150 líneas | **Riesgo:** Medio (`shap` es pesado, puede relentizar la UI; calcular sobre una muestra)
+
+**Criterio de éxito:** Usuario selecciona una fila del test set y ve un waterfall plot explicando por qué esa predicción tomó ese valor.
 
 ---
 
@@ -160,10 +360,12 @@ def ingresos_por_persona(df, ingresos, personas):
 | 3 | Comparación de ejecuciones | 1 | 🔥 Alto | ~60 líneas | Ninguna | ⏳ |
 | 4 | Batch scoring desde UI | 2 | 🚀 Alto | ~100 líneas | #2 completado | ⏳ parcial |
 | 5 | Dashboard de calidad de datos | 2 | 🚀 Alto | ~120 líneas | matplotlib/plotly | ⏳ |
-| 6 | Explicabilidad SHAP | 3 | 💎 Medio | ~150 líneas | shap | ⏳ |
-| 7 | Reporte HTML | 3 | 💎 Medio | ~100 líneas | Jinja2 | ⏳ |
-| 8 | AutoML extendido | 4 | 🧪 Medio | ~200 líneas | Optuna | ⏳ |
-| 9 | Plugins de transformación | 4 | 🧪 Bajo | ~80 líneas | Ninguna | ⏳ |
+| 6 | EDA en lenguaje natural (DuckDB + LLM) | 3 | 🚀 Alto | ~250 líneas | duckdb, Ollama | ⏳ |
+| 7 | Perfilado acelerado datasets grandes (DuckDB) | 3 | 🚀 Alto | ~180 líneas | duckdb | ⏳ |
+| 8 | Reporte HTML exportable | 3 | 💎 Medio | ~120 líneas | Jinja2 | ⏳ |
+| 9 | Explicabilidad SHAP | 3 | 💎 Medio | ~150 líneas | shap | ⏳ |
+| 10 | AutoML extendido (Optuna) | 4 | 🧪 Medio | ~200 líneas | Optuna | ⏳ |
+| 11 | Plugins de transformación | 4 | 🧪 Bajo | ~80 líneas | Ninguna | ⏳ |
 
 ---
 
@@ -197,4 +399,4 @@ Priorizados por impacto × facilidad. Los ✅ ya están aplicados.
 
 ---
 
-*Última actualización: 2026-07-17*
+*Última actualización: 2026-07-21*
